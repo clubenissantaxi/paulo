@@ -21,6 +21,16 @@ function getClosestNote(freq) {
   return { ...closest, diff: freq - closest.freq };
 }
 
+function cleanSignal(buffer, threshold = 0.01) {
+  let rms = 0;
+  for (let i = 0; i < buffer.length; i++) rms += buffer[i] * buffer[i];
+  rms = Math.sqrt(rms / buffer.length);
+  return rms >= threshold;
+}
+
+let lastUpdateTime = 0;
+const UPDATE_DELAY_MS = 1500; // 1.5 segundos de pausa
+
 async function startAutoTuner() {
   const result = document.getElementById("result");
   if (!navigator.mediaDevices.getUserMedia) {
@@ -38,11 +48,26 @@ async function startAutoTuner() {
 
     function detect() {
       analyser.getFloatTimeDomainData(buffer);
+      const now = Date.now();
+
+      if (!cleanSignal(buffer)) {
+        if (now - lastUpdateTime > UPDATE_DELAY_MS) {
+          result.textContent = "Ruído ou som fraco...";
+          result.style.background = "#999";
+          result.style.color = "#fff";
+        }
+        requestAnimationFrame(detect);
+        return;
+      }
+
       const freq = autoCorrelate(buffer, audioCtx.sampleRate);
       if (freq === -1) {
-        result.textContent = "Aguardando som...";
-        result.style.background = "#ccc";
-      } else {
+        if (now - lastUpdateTime > UPDATE_DELAY_MS) {
+          result.textContent = "Aguardando som...";
+          result.style.background = "#ccc";
+          result.style.color = "#000";
+        }
+      } else if (now - lastUpdateTime > UPDATE_DELAY_MS) {
         const { note, freq: expected, diff } = getClosestNote(freq);
         const absDiff = Math.abs(diff);
         const color = absDiff < 5 ? "#0c0" : "#c00"; // verde se afinado
@@ -50,7 +75,9 @@ async function startAutoTuner() {
         result.innerHTML = `${status}<br>${note} - ${freq.toFixed(2)} Hz`;
         result.style.background = color;
         result.style.color = "#fff";
+        lastUpdateTime = now;
       }
+
       requestAnimationFrame(detect);
     }
     detect();
@@ -61,31 +88,42 @@ async function startAutoTuner() {
 
 function autoCorrelate(buf, sampleRate) {
   let SIZE = buf.length;
+  let MAX_SAMPLES = Math.floor(SIZE / 2);
+  let bestOffset = -1;
+  let bestCorrelation = 0;
   let rms = 0;
-  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  let foundGoodCorrelation = false;
+  let correlations = new Array(MAX_SAMPLES);
+
+  for (let i = 0; i < SIZE; i++) {
+    let val = buf[i];
+    rms += val * val;
+  }
   rms = Math.sqrt(rms / SIZE);
   if (rms < 0.01) return -1;
 
-  let r1 = 0, r2 = SIZE - 1, thres = 0.2;
-  for (let i = 0; i < SIZE / 2; i++) if (Math.abs(buf[i]) < thres) { r1 = i; break; }
-  for (let i = 1; i < SIZE / 2; i++) if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; }
-
-  buf = buf.slice(r1, r2);
-  SIZE = buf.length;
-  const c = new Array(SIZE).fill(0);
-  for (let i = 0; i < SIZE; i++)
-    for (let j = 0; j < SIZE - i; j++)
-      c[i] = c[i] + buf[j] * buf[j + i];
-
-  let d = 0;
-  while (c[d] > c[d + 1]) d++;
-  let maxval = -1, maxpos = -1;
-  for (let i = d; i < SIZE; i++) {
-    if (c[i] > maxval) {
-      maxval = c[i];
-      maxpos = i;
+  let lastCorrelation = 1;
+  for (let offset = 0; offset < MAX_SAMPLES; offset++) {
+    let correlation = 0;
+    for (let i = 0; i < MAX_SAMPLES; i++) {
+      correlation += Math.abs(buf[i] - buf[i + offset]);
     }
+    correlation = 1 - correlation / MAX_SAMPLES;
+    correlations[offset] = correlation;
+    if (correlation > 0.9 && correlation > lastCorrelation) {
+      foundGoodCorrelation = true;
+      if (correlation > bestCorrelation) {
+        bestCorrelation = correlation;
+        bestOffset = offset;
+      }
+    } else if (foundGoodCorrelation) {
+      let shift = (correlations[bestOffset + 1] - correlations[bestOffset - 1]) / correlations[bestOffset];
+      return sampleRate / (bestOffset + 8 * shift);
+    }
+    lastCorrelation = correlation;
   }
-  let T0 = maxpos;
-  return sampleRate / T0;
+  if (bestCorrelation > 0.01) {
+    return sampleRate / bestOffset;
+  }
+  return -1;
 }
