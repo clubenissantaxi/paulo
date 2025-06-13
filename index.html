@@ -1,16 +1,28 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Afinador Web</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Afinador Automático</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 2em; background: #f0f0f0; }
+    h1 { font-size: 2em; }
+    button { font-size: 1.5em; padding: 1em; margin-top: 1em; }
+    #result {
+      margin-top: 2em;
+      font-size: 1.5em;
+      padding: 1em;
+      border-radius: 8px;
+      display: inline-block;
+      min-width: 250px;
+    }
+  </style>
 </head>
 <body>
-  <h1>Afinador Web</h1>
-  <button onclick="iniciarAfinador()">Iniciar Afinador</button>
-  <div id="frequencia">Frequência: -- Hz</div>
-
-  <script src="afinador.js"></script>
+  <h1>Afinador Automático</h1>
+  <button onclick="startAutoTuner()">Iniciar Afinador</button>
+  <div id="result">Aguardando...</div>
+  <script src="auto-tuner.js"></script>
 </body>
 </html>
